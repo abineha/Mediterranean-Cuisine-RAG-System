@@ -393,9 +393,15 @@ tab_query, tab_benchmark, tab_eval, tab_about = st.tabs(
 # ---------------------------------------------------------------
 # TAB 1: Single Query
 # ---------------------------------------------------------------
+# ---------------------------------------------------------------
+# TAB 1: Single Query + Upload JSON
+# ---------------------------------------------------------------
 with tab_query:
     st.header("Ask a Question")
 
+    # -------------------------------
+    # SINGLE QUERY INPUT
+    # -------------------------------
     query = st.text_input(
         "Enter your question about Mediterranean cuisine:",
         placeholder="e.g., What are the main ingredients of hummus?",
@@ -417,17 +423,14 @@ with tab_query:
                 query, config, resources, prompt_strategy
             )
 
-        # Display answer
         st.subheader("Answer")
         st.write(response)
 
-        # Display timing
         col1, col2, col3 = st.columns(3)
         col1.metric("Retrieval", f"{timing['retrieval_time']}s")
         col2.metric("Generation", f"{timing['generation_time']}s")
         col3.metric("Total", f"{timing['total_time']}s")
 
-        # Display retrieved chunks
         st.subheader("Retrieved Context")
         for ctx in context:
             with st.expander(
@@ -437,6 +440,82 @@ with tab_query:
                            f"Title: {ctx.get('title', 'N/A')}")
                 st.write(ctx["text"])
 
+    # -------------------------------
+    # JSON FILE UPLOAD
+    # -------------------------------
+    st.markdown("---")
+    st.subheader("Or Upload a JSON File")
+
+    uploaded_file = st.file_uploader(
+        "Upload a JSON file with queries",
+        type=["json"]
+    )
+
+    if uploaded_file is not None:
+        try:
+            data = json.load(uploaded_file)
+
+            if "queries" not in data:
+                st.error("Invalid JSON format. Must contain 'queries' key.")
+            else:
+                queries = data["queries"]
+                st.success(f"Loaded {len(queries)} queries!")
+
+                if st.button("Run Uploaded Queries", type="primary"):
+                    config = {
+                        "retrieval_method": retrieval_method,
+                        "top_k": top_k,
+                    }
+
+                    with st.spinner("Loading resources..."):
+                        resources = load_pipeline_resources(
+                            retrieval_method, embedding_model, chunking_strategy
+                        )
+
+                    all_results = []
+                    progress = st.progress(0, text="Running uploaded queries...")
+
+                    for i, q in enumerate(queries):
+                        progress.progress(
+                            (i + 1) / len(queries),
+                            text=f"Query {i + 1}/{len(queries)}: {q['query'][:60]}..."
+                        )
+
+                        response, context, timing = run_single_query(
+                            q["query"], config, resources, prompt_strategy
+                        )
+
+                        all_results.append({
+                            "query_id": q.get("query_id", str(i)),
+                            "query": q["query"],
+                            "response": response,
+                            "retrieved_context": context,
+                            "timing": timing,
+                        })
+
+                    progress.empty()
+                    st.success("Completed all uploaded queries!")
+
+                    # Save for evaluation tab
+                    st.session_state["benchmark_results"] = all_results
+
+                    # Display results
+                    for r in all_results:
+                        with st.expander(f"Q{r['query_id']}: {r['query']}"):
+                            st.write("**Answer:**", r["response"])
+                            st.caption(
+                                f"Retrieval: {r['timing']['retrieval_time']}s | "
+                                f"Generation: {r['timing']['generation_time']}s"
+                            )
+
+                            for ctx in r["retrieved_context"]:
+                                st.caption(
+                                    f"[{ctx['rank']}] {ctx['doc_id']} "
+                                    f"(score: {ctx['score']:.4f})"
+                                )
+
+        except Exception as e:
+            st.error(f"Error reading JSON file: {str(e)}")
 # ---------------------------------------------------------------
 # TAB 2: Benchmark (run all 15 queries)
 # ---------------------------------------------------------------
