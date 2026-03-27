@@ -1,7 +1,7 @@
 """
 Mediterranean Cuisine RAG Generation Pipeline
 
-Prompting and Generation
+[4] Prompting and Generation
 
 Uses Qwen/Qwen2.5-0.5B-Instruct to generate answers from retrieved chunks.
 3 prompt strategies: zero-shot, few-shot, structured extraction.

@@ -1,6 +1,6 @@
 """
 Mediterranean Cuisine RAG Chunking Pipeline
-Chunking
+[1] Chunking
 
 4 strategies:
   A) section_based  # respects document structure (primary)

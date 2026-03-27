@@ -1,7 +1,7 @@
 # Mediterranean Cuisine RAG System
 **COMP64702: Transforming Text into Meaning**
 
-Retrieval-Augmented Generation (RAG) pipeline for Mediterranean cuisine question-answering. Built from scratch: corpus scraping → chunking → embedding → retrieval → generation → evaluation.
+Retrieval-Augmented Generation (RAG) pipeline for Mediterranean cuisine question-answering. Built from scratch: corpus scraping -> chunking -> embedding -> retrieval -> generation -> evaluation.
 
 ---
 
@@ -37,20 +37,23 @@ main.ipynb
 ├── evaluator.py                 # P@5, R@5, MRR, ROUGE-L, BERTScore, Faithfulness
 ├── demo_app.py                  # Streamlit interactive UI (5 tabs)
 ├── main.ipynb                   # Master notebook — all cells pre-executed
+├── requirements.txt             # Python dependencies (pip install -r requirements.txt)
+├── environment.yml              # Conda environment (conda env create -f environment.yml)
+├── README.md                    # This file
 │
 ├── corpus/                      # 230 scraped .txt documents
-│   └── *.txt                    # Each file: metadata header + full text
-├── corpus_manifest.csv          # Metadata for all 230 documents
-├── corpus_combined.txt          # All docs merged into one file
+│   └── *.txt                    # Each file: metadata header + full article text
+├── corpus_manifest.csv          # Source, URL, word count for all 230 documents
+├── corpus_combined.txt          # All 230 docs merged into one file (434,102 words)
 │
-├── chunks.json                  # Section-based chunks (946 chunks, avg 380w) ← BEST
-├── chunks_fixed_200.json        # Fixed 200-word chunks (2340 chunks)
-├── chunks_fixed_500.json        # Fixed 500-word chunks (874 chunks)
-├── chunks_sentence.json         # Sentence-based chunks (1330 chunks)
-├── chunks_paragraph.json        # Paragraph-based chunks (4434 chunks, avg 81w)
+├── chunks.json                  # Section-based chunks  : 946 chunks, avg 380w  ← BEST
+├── chunks_fixed_200.json        # Fixed 200-word chunks : 2340 chunks, avg 201w
+├── chunks_fixed_500.json        # Fixed 500-word chunks : 874 chunks,  avg 455w
+├── chunks_sentence.json         # Sentence-based chunks : 1330 chunks, avg 275w
+├── chunks_paragraph.json        # Paragraph chunks      : 4434 chunks, avg 81w
 │
-├── indices/                     # FAISS vector indices (9 combinations)
-│   ├── faiss_mpnet_section_based.bin    ← BEST index
+├── indices/                     # FAISS vector indices (9 model × strategy combos, 27 files)
+│   ├── faiss_mpnet_section_based.bin     # BEST index
 │   ├── faiss_mpnet_fixed_200.bin
 │   ├── faiss_mpnet_fixed_500.bin
 │   ├── faiss_mpnet_sentence_based.bin
@@ -59,10 +62,11 @@ main.ipynb
 │   ├── faiss_bge_section_based.bin
 │   ├── faiss_bgem3_section_based.bin
 │   ├── faiss_bgem3_paragraph.bin
-│   └── mapping_*.json / meta_*.json     # ID mappings & metadata
+│   ├── mapping_*.json                    # chunk_id -> vector position mappings
+│   └── meta_*.json                       # model/strategy metadata per index
 │
-├── retrieval_results/           # Top-5 retrieval results (10 experiments)
-│   ├── retrieval_vector_mpnet_section_based.json   ← BEST
+├── retrieval_results/           # Top-5 retrieval output per query (10 experiments)
+│   ├── retrieval_vector_mpnet_section_based.json    # BEST (MRR=1.0, R@5=0.983)
 │   ├── retrieval_bm25_none_section_based.json
 │   ├── retrieval_hybrid_mpnet_section_based.json
 │   ├── retrieval_vector_mpnet_fixed_200.json
@@ -73,24 +77,24 @@ main.ipynb
 │   ├── retrieval_vector_bgem3_paragraph.json
 │   └── retrieval_hybrid_bgem3_paragraph.json
 │
-├── generation_results/          # Generated answers (3 prompt strategies)
-│   ├── generation_results_structured.json   [ BEST ]
+├── generation_results/          # Generated answers for 15 benchmark queries
+│   ├── generation_results_structured.json   # BEST (Faithfulness=0.655)
 │   ├── generation_results_zero_shot.json
 │   └── generation_results_few_shot.json
 │
 ├── evaluation_results/
-│   └── evaluation_results.json  # All metrics: retrieval + generation
+│   └── evaluation_results.json  # All P@5, R@5, MRR, ROUGE-L, BERTScore, Faithfulness scores
 │
-├── rag_benchmark_queries.json   # 15 benchmark queries
-├── rag_benchmark_answers.json   # Gold-standard answers for evaluation
-├── benchmark_output.json        # Pipeline output on benchmark queries
+├── rag_benchmark_queries.json   # 15 benchmark queries (input)
+├── rag_benchmark_answers.json   # [DELIVERABLE 2 | RAG BENCHMARK DATASET] Gold-standard answers for the 15 queries
+├── benchmark_output.json        # Full pipeline output on the 15 benchmark queries
 │
-└── sample_qa/                   # Sample test sets for live demo
-    ├── test_queries.json         # Sample input format
-    ├── test_output.json          # Sample output format
+└── sample_qa/                   # Sample test files for live demo
     ├── mediterranean_sample_qa.json
     ├── east_asia_sample_qa.json
     └── south_asia_sample_qa.json
+├── test_input.json         # Example input format for evaluation
+├── test_output.json          # Example output format
 ```
 
 ---
@@ -144,7 +148,7 @@ Launch with: `streamlit run demo_app.py`
 
 ## Live Demo / Test with Custom Queries
 
-Place the test file as `test_queries.json` in the **root project folder** (same folder as `demo_app.py` and `main.ipynb`):
+Place the test file as `test_input.json` in the **root project folder** (same folder as `demo_app.py` and `main.ipynb`):
 
 ```json
 {
@@ -155,37 +159,7 @@ Place the test file as `test_queries.json` in the **root project folder** (same 
 }
 ```
 
-Then run cell 6.4 in `main.ipynb`, or:
-
-```bash
-python -c "
-import json
-from retriever import load_chunks, setup_vector, retrieve_vector, CHUNK_FILES
-from generator import load_model, format_context, build_messages, generate_answer
-
-chunks = load_chunks('chunks.json')
-cl = {c['chunk_id']: c for c in chunks}
-vs = setup_vector('mpnet', 'section_based')
-model, tok = load_model()
-
-with open('test_queries.json') as f:
-    data = json.load(f)
-
-results = []
-for q in data['queries']:
-    hits = retrieve_vector(q['query'], vs, k=5)
-    ctx = [{'doc_id': c['chunk_id'], 'text': cl[c['chunk_id']]['text']} for c in hits]
-    from generator import format_context, build_messages, generate_answer
-    msgs = build_messages('structured', format_context(ctx), q['query'])
-    ans, _ = generate_answer(model, tok, msgs)
-    results.append({'query_id': q['query_id'], 'query': q['query'], 'response': ans,
-                    'retrieved_context': [{'doc_id': str(i), 'text': c['text']} for i, c in enumerate(ctx)]})
-
-with open('test_output.json', 'w') as f:
-    json.dump({'results': results}, f, indent=2)
-print('Saved test_output.json')
-"
-```
+Then run cell 6.4 in `main.ipynb` for results:
 
 ---
 

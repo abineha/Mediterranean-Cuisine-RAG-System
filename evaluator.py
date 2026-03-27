@@ -1,7 +1,7 @@
 """
 Mediterranean Cuisine RAG Evaluation Pipeline
 
-Evaluation
+[5] Evaluation
 
 Evaluates retrieval quality and generation quality:
   A) Retrieval metrics:  Precision@5, Recall@5, MRR

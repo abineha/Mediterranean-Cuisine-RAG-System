@@ -1,6 +1,6 @@
 """
 Mediterranean Cuisine RAG Embedding + Indexing Pipeline
-Vectorisation / Embedding
+[2] Vectorisation / Embedding
 
 Embedding chunked text using sentence-transformers models, builds FAISS indices for semantic search
 

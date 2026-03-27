@@ -1,7 +1,7 @@
 """
 Mediterranean Cuisine RAG Retrieval & Ranking Pipeline
 
-Retrieval and Ranking
+[3] Retrieval and Ranking
 
 3 retrieval strategies:
   A) Pure vector retrieval  (cosine similarity via FAISS)
