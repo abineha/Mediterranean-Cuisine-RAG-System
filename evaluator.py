@@ -1,9 +1,9 @@
 """
-Mediterranean Cuisine -- RAG Evaluation Pipeline
-==================================================
-Deliverable 5: Evaluation
+Mediterranean Cuisine RAG Evaluation Pipeline
 
-Evaluates both retrieval quality and generation quality:
+Evaluation
+
+Evaluates retrieval quality and generation quality:
   A) Retrieval metrics:  Precision@5, Recall@5, MRR
   B) Generation metrics: ROUGE-L, BERTScore F1, Faithfulness
 
@@ -19,9 +19,8 @@ import argparse
 import re
 from collections import defaultdict
 
-# ---------------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------------
+# CONFIG
+
 GOLD_FILE = "rag_benchmark_answers.json"
 
 RETRIEVAL_DIR = "retrieval_results"
@@ -36,7 +35,7 @@ CHUNK_FILES = {
     "paragraph":      "chunks_paragraph.json",
 }
 
-# Retrieval experiments to evaluate
+# Retrieval experiments 
 RETRIEVAL_EXPERIMENTS = [
     ("retrieval_vector_mpnet_section_based.json",   "Vector",     "mpnet",  "section_based"),
     ("retrieval_bm25_none_section_based.json",      "BM25",       "none",   "section_based"),
@@ -50,7 +49,7 @@ RETRIEVAL_EXPERIMENTS = [
     ("retrieval_hybrid_bgem3_paragraph.json",       "Hybrid RRF", "bgem3", "paragraph"),
 ]
 
-# Generation experiments to evaluate
+# Generation experiments
 GENERATION_EXPERIMENTS = [
     ("generation_results_zero_shot.json",   "zero_shot"),
     ("generation_results_few_shot.json",    "few_shot"),
@@ -78,26 +77,24 @@ STOPWORDS = {
 }
 
 
-# ---------------------------------------------------------------
-# STEP 1: LOAD DATA
-# ---------------------------------------------------------------
+# 1: LOADING DATA
 
 def load_gold_standard():
-    """Load gold-standard benchmark answers."""
+    """gold-standard benchmark answers."""
     with open(GOLD_FILE, encoding="utf-8") as f:
         data = json.load(f)
     return data["results"]
 
 
 def load_retrieval_results(filename):
-    """Load retrieval results from JSON file."""
+    """retrieval results from JSON file."""
     filepath = os.path.join(RETRIEVAL_DIR, filename)
     with open(filepath, encoding="utf-8") as f:
         return json.load(f)
 
 
 def load_generation_results(filename):
-    """Load generation results from JSON file."""
+    """generation results from JSON file."""
     filepath = os.path.join(GENERATION_DIR, filename)
     with open(filepath, encoding="utf-8") as f:
         data = json.load(f)
@@ -105,28 +102,23 @@ def load_generation_results(filename):
 
 
 def load_chunks(strategy):
-    """Load chunk texts for a given chunking strategy."""
+    """chunk texts for a given chunking strategy."""
     chunk_file = CHUNK_FILES[strategy]
     with open(chunk_file, encoding="utf-8") as f:
         chunks = json.load(f)
     return {c["chunk_id"]: c for c in chunks}
 
 
-# ---------------------------------------------------------------
-# STEP 2: CHUNK MATCHING (fuzzy word overlap)
-# ---------------------------------------------------------------
+# 2: CHUNK MATCHING (fuzzy word overlap)
 
 def get_content_words(text):
-    """Extract lowercase content words from text (no stopwords)."""
+    """lowercase content words from text (no stopwords)."""
     words = re.findall(r'[a-z]+', text.lower())
     return [w for w in words if w not in STOPWORDS and len(w) > 2]
 
 
 def chunks_match(gold_text, retrieved_text, threshold=MATCH_THRESHOLD):
-    """Check if a gold-standard chunk matches a retrieved chunk by word overlap.
-
-    Returns True if at least `threshold` fraction of gold content words
-    appear in the retrieved chunk text.
+    """gold-standard chunk matches a retrieved chunk by word overlap ?
     """
     gold_words = set(get_content_words(gold_text))
     if not gold_words:
@@ -136,14 +128,10 @@ def chunks_match(gold_text, retrieved_text, threshold=MATCH_THRESHOLD):
     return (overlap / len(gold_words)) >= threshold
 
 
-# ---------------------------------------------------------------
-# STEP 3: RETRIEVAL METRICS
-# ---------------------------------------------------------------
+# 3: RETRIEVAL METRICS
 
 def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
-    """Compute Precision@5, Recall@5, and MRR for one retrieval experiment.
-
-    Returns per-query metrics and averages.
+    """Precision@5, Recall@5, and MRR for 1 retrieval experiment.(per-query metrics and averages)
     """
     per_query = []
 
@@ -151,7 +139,7 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
         qid = gold["query_id"]
         gold_chunks = gold["retrieved_context"]
 
-        # Find matching retrieval result
+        # matching retrieval result
         retr = None
         for r in retrieval_results:
             if str(r["query_id"]) == str(qid):
@@ -167,14 +155,12 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
             })
             continue
 
-        # Get retrieved chunk texts
         retrieved_texts = []
         for hit in retr["retrieved"]:
             cid = hit["chunk_id"]
             chunk = chunks_lookup.get(cid, {})
             retrieved_texts.append(chunk.get("text", ""))
 
-        # Count matches
         matched_gold = 0
         first_match_rank = None
 
@@ -188,7 +174,7 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
             if is_match and first_match_rank is None:
                 first_match_rank = rank
 
-        # For precision/recall, count unique gold chunks matched
+        # For precision/recall, no. of unique gold chunks matched
         matched_gold = 0
         for gc in gold_chunks:
             for ret_text in retrieved_texts:
@@ -196,7 +182,7 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
                     matched_gold += 1
                     break
 
-        # Also count how many retrieved chunks match any gold chunk
+        # no. of retrieved chunks match any gold chunk
         matched_retrieved = 0
         for ret_text in retrieved_texts:
             for gc in gold_chunks:
@@ -215,7 +201,6 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
             "reciprocal_rank": round(rr, 4),
         })
 
-    # Compute averages
     n = len(per_query)
     avg_precision = sum(q["precision_at_5"] for q in per_query) / n
     avg_recall = sum(q["recall_at_5"] for q in per_query) / n
@@ -229,12 +214,11 @@ def evaluate_retrieval(retrieval_results, gold_standard, chunks_lookup):
     }
 
 
-# ---------------------------------------------------------------
-# STEP 4: GENERATION METRICS — ROUGE-L
-# ---------------------------------------------------------------
+
+# 4: GENERATION METRICS + ROUGE-L
 
 def compute_rouge_l(gold_answers, generated_answers):
-    """Compute ROUGE-L F1 for each query pair. Returns per-query and average."""
+    """ROUGE-L F1 for each query pair. per-query and average."""
     from rouge_score import rouge_scorer
 
     scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
@@ -247,10 +231,7 @@ def compute_rouge_l(gold_answers, generated_answers):
     avg = round(sum(scores) / len(scores), 4) if scores else 0.0
     return scores, avg
 
-
-# ---------------------------------------------------------------
-# STEP 5: GENERATION METRICS — BERTScore
-# ---------------------------------------------------------------
+# 5: GENERATION METRICS + BERTScore
 
 def compute_bert_score(gold_answers, generated_answers):
     """Compute BERTScore F1 for each query pair. Returns per-query and average."""
@@ -269,17 +250,11 @@ def compute_bert_score(gold_answers, generated_answers):
     return scores, avg
 
 
-# ---------------------------------------------------------------
-# STEP 6: FAITHFULNESS CHECK
-# ---------------------------------------------------------------
+# 6: FAITHFULNESS CHECK
 
 def compute_faithfulness(generated_answers, retrieved_contexts):
-    """Check what fraction of content words in the answer appear in the context.
-
-    For each answer, compute:
+    """fraction of content words in the answer appear in the context ?
         grounding_ratio = |answer_words ∩ context_words| / |answer_words|
-
-    Returns per-query ratios and average.
     """
     ratios = []
 
@@ -289,7 +264,6 @@ def compute_faithfulness(generated_answers, retrieved_contexts):
             ratios.append(1.0)
             continue
 
-        # Combine all retrieved chunk texts
         context_text = " ".join(c.get("text", "") for c in contexts)
         context_words = set(get_content_words(context_text))
 
@@ -301,12 +275,10 @@ def compute_faithfulness(generated_answers, retrieved_contexts):
     return ratios, avg
 
 
-# ---------------------------------------------------------------
-# STEP 7: RUN FULL EVALUATION
-# ---------------------------------------------------------------
+# 7: EVALUATION
 
 def run_retrieval_evaluation(gold_standard):
-    """Evaluate all retrieval experiments."""
+    """retrieval experiments."""
     print("\n" + "=" * 70)
     print("  RETRIEVAL EVALUATION")
     print("=" * 70)
@@ -341,7 +313,7 @@ def run_retrieval_evaluation(gold_standard):
         print(f"    Recall@5:    {metrics['avg_recall_at_5']:.4f}")
         print(f"    MRR:         {metrics['mrr']:.4f}")
 
-    # Print comparison table
+    # comparison table
     print(f"\n  {'-' * 70}")
     print(f"  {'Method':<12s} {'Model':<7s} {'Chunking':<15s} {'P@5':>6s} {'R@5':>6s} {'MRR':>6s}")
     print(f"  {'-' * 70}")
@@ -359,7 +331,7 @@ def run_generation_evaluation(gold_standard):
     print("  GENERATION EVALUATION")
     print("=" * 70)
 
-    # Prepare gold answers (same for all strategies)
+    # gold answers (same for all strats)
     gold_answers = [g["response"] for g in gold_standard]
 
     all_results = []
@@ -373,7 +345,6 @@ def run_generation_evaluation(gold_standard):
         print(f"\n  Evaluating: {strategy}")
         gen_results = load_generation_results(filename)
 
-        # Sort by query_id to match gold order
         gen_results.sort(key=lambda x: int(x["query_id"]))
         generated_answers = [g["response"] for g in gen_results]
         retrieved_contexts = [g["retrieved_context"] for g in gen_results]
@@ -390,7 +361,6 @@ def run_generation_evaluation(gold_standard):
         print("    Computing Faithfulness...")
         faith_scores, faith_avg = compute_faithfulness(generated_answers, retrieved_contexts)
 
-        # Get average generation time from results
         avg_time = sum(g.get("generation_time_s", 0) for g in gen_results) / len(gen_results)
 
         result = {
@@ -416,7 +386,7 @@ def run_generation_evaluation(gold_standard):
         print(f"    Faithfulness:  {faith_avg:.4f}")
         print(f"    Avg time/q:    {avg_time:.1f}s")
 
-    # Print comparison table
+    # comparison table
     print(f"\n  {'-' * 70}")
     print(f"  {'Strategy':<14s} {'ROUGE-L':>8s} {'BERTScore':>10s} {'Faithful':>10s} {'Time/q':>8s}")
     print(f"  {'-' * 70}")
@@ -429,7 +399,7 @@ def run_generation_evaluation(gold_standard):
 
 
 def save_results(retrieval_results, generation_results):
-    """Save all evaluation results to JSON."""
+    """evaluation results to JSON."""
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     output = {
@@ -445,9 +415,6 @@ def save_results(retrieval_results, generation_results):
     return filepath
 
 
-# ---------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -461,10 +428,8 @@ if __name__ == "__main__":
                         help=f"Word overlap threshold for chunk matching (default: {MATCH_THRESHOLD})")
     args = parser.parse_args()
 
-    # Update threshold if specified
     MATCH_THRESHOLD = args.match_threshold
 
-    # Load gold standard
     gold_standard = load_gold_standard()
     print(f"  Loaded {len(gold_standard)} gold-standard queries from {GOLD_FILE}")
 
@@ -477,7 +442,6 @@ if __name__ == "__main__":
     if not args.retrieval_only:
         generation_results = run_generation_evaluation(gold_standard)
 
-    # Save
     save_results(retrieval_results, generation_results)
 
     print(f"\n{'=' * 70}")

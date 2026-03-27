@@ -1,22 +1,19 @@
 """
-Mediterranean Cuisine -- RAG Embedding & Indexing Pipeline
-==========================================================
-Deliverable 2: Vectorisation / Embedding
+Mediterranean Cuisine RAG Embedding + Indexing Pipeline
+Vectorisation / Embedding
 
-Embeds chunked text using sentence-transformers models,
-builds FAISS indices for semantic search, and runs a
-sanity check.
+Embedding chunked text using sentence-transformers models, builds FAISS indices for semantic search
 
-Supports four embedding models:
-  A) all-MiniLM-L6-v2      -- lightweight baseline (384d)
-  B) all-mpnet-base-v2      -- best quality (768d)
-  C) BAAI/bge-small-en-v1.5 -- retrieval specialist (384d)
-  D) BAAI/bge-m3            -- multilingual retrieval, strong domain perf (1024d)
+4 embedding models:
+  A) all-MiniLM-L6-v2           # lightweight baseline (384d)
+  B) all-mpnet-base-v2          # best quality (768d)
+  C) BAAI/bge-small-en-v1.5     # retrieval specialist (384d)
+  D) BAAI/bge-m3                # multilingual retrieval, strong domain perf (1024d)
 
 Usage:
     python embedder.py                          # default: MiniLM + section_based
     python embedder.py --model all-mpnet-base-v2 --chunks chunks_fixed_200.json
-    python embedder.py --run-all                # run all experiment combinations
+    python embedder.py --run-all                # all experiment combinations
     python embedder.py --sanity-check           # quick retrieval test
 """
 
@@ -26,9 +23,8 @@ import time
 import argparse
 import numpy as np
 
-# ---------------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------------
+# CONFIG
+
 MODELS = {
     "minilm":  "all-MiniLM-L6-v2",
     "mpnet":   "all-mpnet-base-v2",
@@ -36,10 +32,9 @@ MODELS = {
     "bgem3":   "BAAI/bge-m3",
 }
 
-# BGE-small requires a query prefix for retrieval (not for documents)
+# BGE-small: a query prefix for retrieval 
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-# BGE-M3 does NOT need a query prefix when used via SentenceTransformers
-# (the model handles query/doc distinction internally)
+# BGE-M3: no need a query prefix when used via SentenceTransformers
 BGEM3_QUERY_PREFIX = ""
 
 CHUNK_FILES = {
@@ -52,7 +47,7 @@ CHUNK_FILES = {
 
 OUTPUT_DIR = "indices"
 
-# Experiment matrix: all model-strategy combinations to evaluate
+# Experiment matrix + strats combination
 EXPERIMENT_MATRIX = [
     ("minilm", "section_based"),    # lightweight baseline
     ("mpnet",  "section_based"),    # best model + best chunks
@@ -66,33 +61,20 @@ EXPERIMENT_MATRIX = [
 ]
 
 
-# ---------------------------------------------------------------
-# STEP 1: LOAD CHUNKS
-# ---------------------------------------------------------------
+# 1: LOADING CHUNKS
 
 def load_chunks(chunk_file: str) -> list[dict]:
-    """Load chunks from JSON file."""
+    """Loading chunks from JSON file."""
     with open(chunk_file, encoding="utf-8") as f:
         chunks = json.load(f)
     print(f"  Loaded {len(chunks)} chunks from {chunk_file}")
     return chunks
 
 
-# ---------------------------------------------------------------
-# STEP 2: EMBED CHUNKS
-# ---------------------------------------------------------------
+# 2: EMBEDDING CHUNKS
 
 def embed_chunks(chunks: list[dict], model_key: str) -> dict:
-    """Embed all chunks using the specified model.
-
-    Returns dict with:
-      - embeddings: numpy array (num_chunks, dim)
-      - chunk_ids: list of chunk_id strings
-      - model_name: full model name
-      - dimension: embedding dimension
-      - embed_time_s: time taken
-      - truncated_count: chunks exceeding model's max token limit
-      - max_seq_length: model's max sequence length
+    """Embedding all chunks using the specified model.
     """
     from sentence_transformers import SentenceTransformer
 
@@ -104,11 +86,9 @@ def embed_chunks(chunks: list[dict], model_key: str) -> dict:
     dim = model.get_sentence_embedding_dimension()
     print(f"  Max sequence length: {max_seq} tokens, Dimension: {dim}")
 
-    # Extract texts and IDs
     texts = [c["text"] for c in chunks]
     chunk_ids = [c["chunk_id"] for c in chunks]
 
-    # Check how many chunks exceed the token limit
     tokenizer = model.tokenizer
     truncated = 0
     for t in texts:
@@ -121,7 +101,6 @@ def embed_chunks(chunks: list[dict], model_key: str) -> dict:
     else:
         print(f"  All {len(texts)} chunks fit within token limit")
 
-    # Embed
     print(f"  Embedding {len(texts)} chunks...")
     start = time.time()
     embeddings = model.encode(
@@ -146,14 +125,10 @@ def embed_chunks(chunks: list[dict], model_key: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------
-# STEP 3: BUILD FAISS INDEX
-# ---------------------------------------------------------------
+# 3: FAISS INDEX
 
 def build_faiss_index(embed_result: dict, strategy: str, output_dir: str = OUTPUT_DIR):
-    """Build and save a FAISS index + chunk-ID mapping.
-
-    Uses IndexFlatIP (inner product = cosine similarity on normalised vectors).
+    """FAISS index + chunk-ID mapping + IndexFlatIP (inner product = cosine similarity on normalised vectors).
     """
     import faiss
 
@@ -163,27 +138,24 @@ def build_faiss_index(embed_result: dict, strategy: str, output_dir: str = OUTPU
     dim = embed_result["dimension"]
     model_key = embed_result["model_key"]
 
-    # Create flat inner-product index
+    # flat inner-product index
     index = faiss.IndexFlatIP(dim)
     index.add(embeddings.astype(np.float32))
     print(f"  FAISS index: {index.ntotal} vectors, {dim}d")
 
-    # File names
     prefix = f"{model_key}_{strategy}"
     index_path = os.path.join(output_dir, f"faiss_{prefix}.bin")
     mapping_path = os.path.join(output_dir, f"mapping_{prefix}.json")
     meta_path = os.path.join(output_dir, f"meta_{prefix}.json")
 
-    # Save index
     faiss.write_index(index, index_path)
     print(f"  Saved index:   {index_path}")
 
-    # Save chunk-ID mapping (position -> chunk_id)
+    # chunk-ID mapping (position to chunk_id)
     with open(mapping_path, "w", encoding="utf-8") as f:
         json.dump(embed_result["chunk_ids"], f, indent=2)
     print(f"  Saved mapping: {mapping_path}")
 
-    # Save metadata
     meta = {
         "model_name": embed_result["model_name"],
         "model_key": model_key,
@@ -201,13 +173,9 @@ def build_faiss_index(embed_result: dict, strategy: str, output_dir: str = OUTPU
     return index_path, mapping_path, meta_path
 
 
-# ---------------------------------------------------------------
-# STEP 4: SANITY CHECK
-# ---------------------------------------------------------------
-
 def sanity_check(model_key: str = "minilm", strategy: str = "section_based",
                  top_k: int = 5):
-    """Embed test queries and retrieve top-k chunks to verify the pipeline."""
+    """test queries + top-k chunks """
     import faiss
     from sentence_transformers import SentenceTransformer
 
@@ -219,18 +187,15 @@ def sanity_check(model_key: str = "minilm", strategy: str = "section_based",
         print(f"  Index not found: {index_path}. Run embedding first.")
         return
 
-    # Load index and mapping
     index = faiss.read_index(index_path)
     with open(mapping_path, encoding="utf-8") as f:
         chunk_ids = json.load(f)
 
-    # Load chunks for text lookup
     chunk_file = CHUNK_FILES[strategy]
     with open(chunk_file, encoding="utf-8") as f:
         chunks = json.load(f)
     id_to_chunk = {c["chunk_id"]: c for c in chunks}
 
-    # Load model
     model_name = MODELS[model_key]
     model = SentenceTransformer(model_name)
 
@@ -244,7 +209,6 @@ def sanity_check(model_key: str = "minilm", strategy: str = "section_based",
     print(f"  {'-'*60}")
 
     for query in test_queries:
-        # Add BGE prefix if needed
         encode_query = query
         if model_key == "bge":
             encode_query = BGE_QUERY_PREFIX + query
@@ -264,12 +228,10 @@ def sanity_check(model_key: str = "minilm", strategy: str = "section_based",
             print(f"    {rank}. [{score:.4f}] {cid}  ({title} / {section}, {wc}w)")
 
 
-# ---------------------------------------------------------------
-# STEP 5: RUN ONE COMBINATION
-# ---------------------------------------------------------------
+# 5: 1 COMBI
 
 def run_one(model_key: str, strategy: str):
-    """Run embedding + indexing for one model-strategy combination."""
+    """embedding + indexing for 1 model-strategy combination."""
     chunk_file = CHUNK_FILES[strategy]
     if not os.path.exists(chunk_file):
         print(f"  Chunk file not found: {chunk_file}. Run chunker.py first.")
@@ -282,11 +244,6 @@ def run_one(model_key: str, strategy: str):
     chunks = load_chunks(chunk_file)
     result = embed_chunks(chunks, model_key)
     build_faiss_index(result, strategy)
-
-
-# ---------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -309,14 +266,12 @@ if __name__ == "__main__":
     if args.run_all:
         for model_key, strategy in EXPERIMENT_MATRIX:
             run_one(model_key, strategy)
-        # Sanity check on the primary combination
         print("\n" + "="*60)
         print("  SANITY CHECK")
         print("="*60)
         sanity_check("mpnet", "section_based")
     else:
         if args.chunks:
-            # Custom chunk file -- infer strategy from filename
             strategy = args.chunks.replace("chunks_", "").replace(".json", "")
             CHUNK_FILES[strategy] = args.chunks
         else:

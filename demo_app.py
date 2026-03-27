@@ -1,6 +1,6 @@
 """
-Mediterranean Cuisine RAG -- Streamlit Demo Application
-========================================================
+Mediterranean Cuisine RAG Streamlit Demo Application
+
 Interactive demo for the complete RAG pipeline:
   1. Configure retrieval method, embedding model, chunking strategy
   2. Ask questions and see retrieved chunks + generated answers
@@ -16,9 +16,9 @@ import time
 import streamlit as st
 import numpy as np
 
-# ---------------------------------------------------------------
-# IMPORT PIPELINE MODULES
-# ---------------------------------------------------------------
+
+# IMPORTING PIPELINE MODULES
+
 from retriever import (
     MODELS, CHUNK_FILES, BGE_QUERY_PREFIX, BGEM3_QUERY_PREFIX,
     load_chunks as retriever_load_chunks,
@@ -34,25 +34,20 @@ from evaluator import (
     compute_rouge_l, compute_bert_score, compute_faithfulness,
 )
 
-# ---------------------------------------------------------------
 # MODEL KEY MAPPING
-# ---------------------------------------------------------------
+
 MODEL_NAME_TO_KEY = {v: k for k, v in MODELS.items()}
 
 
-# ---------------------------------------------------------------
 # PAGE CONFIG
-# ---------------------------------------------------------------
+
 st.set_page_config(
     page_title="Mediterranean Cuisine RAG",
-    page_icon="🫒",
+    page_icon="🍽️",
     layout="wide",
 )
 
-# ---------------------------------------------------------------
-# CUSTOM THEME CSS
-# Palette: #E27396 #EA9AB2 #EFCFE3 #EAF2D7 #B3DEE2
-# ---------------------------------------------------------------
+
 st.markdown("""
 <style>
     /* Sidebar */
@@ -137,9 +132,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ---------------------------------------------------------------
+
 # SIDEBAR CONFIGURATION
-# ---------------------------------------------------------------
+
 st.sidebar.title("RAG Configuration")
 
 retrieval_method = st.sidebar.selectbox(
@@ -191,9 +186,9 @@ st.sidebar.caption(f"Generation: temp={GENERATION_CONFIG['temperature']}, "
                     f"top_p={GENERATION_CONFIG['top_p']}")
 
 
-# ---------------------------------------------------------------
-# FUNCTION 1: LOAD PIPELINE RESOURCES (cached)
-# ---------------------------------------------------------------
+
+# 1: LOAD PIPELINE RESOURCES (cached)
+
 @st.cache_resource(show_spinner="Loading pipeline resources...")
 def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy):
     """Load all resources needed for the pipeline. Cached by Streamlit."""
@@ -213,7 +208,7 @@ def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy
     model_key = MODEL_NAME_TO_KEY.get(embedding_model)
 
     if retrieval_method in ("vector", "hybrid") and model_key:
-        # Load FAISS index
+        # Loading FAISS index
         prefix = f"{model_key}_{chunking_strategy}"
         index_path = os.path.join("indices", f"faiss_{prefix}.bin")
         mapping_path = os.path.join("indices", f"mapping_{prefix}.json")
@@ -223,7 +218,7 @@ def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy
             with open(mapping_path, encoding="utf-8") as f:
                 id_mapping = json.load(f)
 
-            # Load embedding model
+            # Loading embedding model
             embed_model = SentenceTransformer(embedding_model)
 
             resources["vec_setup"] = {
@@ -233,7 +228,7 @@ def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy
                 "model_key": model_key,
             }
 
-    # 3. Build BM25 index (only for bm25/hybrid)
+    # 3. BM25 index (only for bm25/hybrid)
     if retrieval_method in ("bm25", "hybrid"):
         tokenized_corpus = [c["text"].lower().split() for c in chunks]
         bm25_id_mapping = [c["chunk_id"] for c in chunks]
@@ -244,7 +239,7 @@ def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy
             "id_mapping": bm25_id_mapping,
         }
 
-    # 4. Load Qwen model + tokenizer
+    # 4. Loading Qwen model + tokenizer
     llm_model, tokenizer = load_model()
     resources["llm_model"] = llm_model
     resources["tokenizer"] = tokenizer
@@ -252,9 +247,8 @@ def load_pipeline_resources(retrieval_method, embedding_model, chunking_strategy
     return resources
 
 
-# ---------------------------------------------------------------
-# FUNCTION 2: RUN SINGLE QUERY
-# ---------------------------------------------------------------
+# 2: RUN SINGLE QUERY
+
 def run_single_query(query, config, resources, prompt_strategy):
     """Run the full RAG pipeline for a single query.
 
@@ -277,7 +271,7 @@ def run_single_query(query, config, resources, prompt_strategy):
 
     retrieval_time = time.time() - start
 
-    # Step 2: Resolve chunk IDs to full chunk objects
+    # Step 2: Resolving chunk IDs to full chunk objects
     chunks_lookup = resources["chunks_lookup"]
     retrieved_context = []
     for hit in results:
@@ -292,7 +286,7 @@ def run_single_query(query, config, resources, prompt_strategy):
             "rank": hit["rank"],
         })
 
-    # Step 3: Generate
+    # Step 3: Generating
     context_str = format_context(retrieved_context)
     messages = build_messages(prompt_strategy, context_str, query)
 
@@ -309,19 +303,19 @@ def run_single_query(query, config, resources, prompt_strategy):
     }
 
 
-# ---------------------------------------------------------------
-# FUNCTION 3: RUN EVALUATION
-# ---------------------------------------------------------------
+
+# 3: RUN EVALUATION
+
 def run_evaluation(generated_results, config, resources, gold_file_path):
     """Evaluate generated results against gold standard.
 
     Returns dict with retrieval and generation metrics.
     """
-    # Load gold standard
+    # Loading gold standard
     gold_standard = load_gold_standard()
     chunks_lookup = resources["chunks_lookup"]
 
-    # Build retrieval results in the format evaluate_retrieval expects
+    # Building retrieval results in the format evaluate_retrieval expects
     retrieval_formatted = []
     gold_answers = []
     generated_answers = []
@@ -330,7 +324,7 @@ def run_evaluation(generated_results, config, resources, gold_file_path):
     for gen in generated_results:
         qid = gen["query_id"]
 
-        # Build retrieval format: list of {chunk_id, ...}
+        # Building retrieval format: list of {chunk_id, ...}
         retrieved = []
         for ctx in gen["retrieved_context"]:
             retrieved.append({
@@ -381,27 +375,24 @@ def run_evaluation(generated_results, config, resources, gold_file_path):
     }
 
 
-# ---------------------------------------------------------------
 # UI: TABS
-# ---------------------------------------------------------------
+
 st.title("Mediterranean Cuisine RAG System")
 
 tab_query, tab_benchmark, tab_eval, tab_explore, tab_about = st.tabs(
     ["Single Query", "Benchmark", "Evaluation", "Exploration Results", "About"]
 )
 
-# ---------------------------------------------------------------
+
 # TAB 1: Single Query
-# ---------------------------------------------------------------
-# ---------------------------------------------------------------
+
 # TAB 1: Single Query + Upload JSON
-# ---------------------------------------------------------------
+
 with tab_query:
     st.header("Ask a Question")
 
-    # -------------------------------
     # SINGLE QUERY INPUT
-    # -------------------------------
+
     query = st.text_input(
         "Enter your question about Mediterranean cuisine:",
         placeholder="e.g., What are the main ingredients of hummus?",
@@ -440,9 +431,8 @@ with tab_query:
                            f"Title: {ctx.get('title', 'N/A')}")
                 st.write(ctx["text"])
 
-    # -------------------------------
     # JSON FILE UPLOAD
-    # -------------------------------
+    
     st.markdown("---")
     st.subheader("Or Upload a JSON File")
 
@@ -516,9 +506,9 @@ with tab_query:
 
         except Exception as e:
             st.error(f"Error reading JSON file: {str(e)}")
-# ---------------------------------------------------------------
+
 # TAB 2: Benchmark (run all 15 queries)
-# ---------------------------------------------------------------
+
 with tab_benchmark:
     st.header("Run Benchmark Queries")
     st.write("Run all 15 benchmark queries and view results side by side.")
@@ -534,7 +524,7 @@ with tab_benchmark:
                 retrieval_method, embedding_model, chunking_strategy
             )
 
-        # Load benchmark queries
+        # Loading benchmark queries
         with open("rag_benchmark_queries.json", encoding="utf-8") as f:
             benchmark = json.load(f)
         queries = benchmark["queries"]
@@ -561,10 +551,10 @@ with tab_benchmark:
         progress.empty()
         st.success(f"Completed {len(all_results)} queries!")
 
-        # Store in session state for evaluation tab
+        # Storing in session state for evaluation tab
         st.session_state["benchmark_results"] = all_results
 
-        # Display results
+        # Displaying results
         for r in all_results:
             with st.expander(f"Q{r['query_id']}: {r['query']}"):
                 st.write("**Answer:**", r["response"])
@@ -578,9 +568,8 @@ with tab_benchmark:
                         f"(score: {ctx['score']:.4f})"
                     )
 
-# ---------------------------------------------------------------
 # TAB 3: Evaluation
-# ---------------------------------------------------------------
+
 with tab_eval:
     st.header("Evaluation Metrics")
 
@@ -642,9 +631,8 @@ with tab_eval:
     # Link to exploration tab for full comparison
     st.caption("See the **Exploration Results** tab for the full comparison across all 10 retrieval and 3 generation experiments.")
 
-# ---------------------------------------------------------------
 # TAB 4: Exploration Results
-# ---------------------------------------------------------------
+
 with tab_explore:
     st.header("Pipeline Exploration Results")
     st.write(
@@ -659,7 +647,7 @@ with tab_explore:
         with open(eval_file, encoding="utf-8") as f:
             precomputed = json.load(f)
 
-        # --- Retrieval comparison ---
+        # Retrieval comparison
         if precomputed.get("retrieval_evaluation"):
             st.subheader("Retrieval: 10 Experiments")
             rows = []
@@ -674,7 +662,7 @@ with tab_explore:
                 })
             df_ret = pd.DataFrame(rows)
 
-            # Highlight best row
+            # Highlighting best row
             def highlight_best(row):
                 is_best = (
                     row["Method"] == "Vector"
@@ -698,7 +686,7 @@ with tab_explore:
                 "MRR 1.0 (perfect first-hit), Recall@5 0.983"
             )
 
-        # --- Generation comparison ---
+        # Generation comparison
         if precomputed.get("generation_evaluation"):
             st.subheader("Generation: 3 Prompt Strategies")
             rows = []
@@ -734,7 +722,7 @@ with tab_explore:
                 "highest faithfulness (0.64), highest ROUGE-L (0.25), fastest (17.4s/q)"
             )
 
-        # --- Key findings ---
+        # Key findings
         st.subheader("Key Findings")
         st.markdown("""
 - **Section-based chunking** (avg 380 words) dominates — enough context for retrieval and generation
@@ -745,7 +733,7 @@ with tab_explore:
 - **BM25** was weakest — keyword matching fails on semantic queries like "history and origin of baklava"
         """)
 
-        # --- Winner box ---
+        # best overall
         st.success(
             "**Winner: Vector + mpnet + section_based + structured prompting**\n\n"
             "P@5=0.653 | R@5=0.983 | MRR=1.000 | ROUGE-L=0.246 | Faithfulness=0.640"
@@ -755,9 +743,9 @@ with tab_explore:
             "No pre-computed results found. Run `python evaluator.py` first."
         )
 
-# ---------------------------------------------------------------
+
 # TAB 5: About
-# ---------------------------------------------------------------
+
 with tab_about:
     st.header("About This System")
 
@@ -791,5 +779,5 @@ with tab_about:
     - **Structured prompting** produces the best ROUGE-L scores
 
     ---
-    **Team**: COMP 647-02 Group
+    **Team**: COMP64702 Group 41
     """)

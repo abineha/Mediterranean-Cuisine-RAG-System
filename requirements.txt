@@ -1,0 +1,26 @@
+# Mediterranean Cuisine RAG System (Dependencies)
+# pip install -r requirements.txt
+
+# Web scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Data / ML core
+numpy>=1.24.0
+torch>=2.0.0
+
+# NLP / Embeddings
+sentence-transformers>=2.7.0
+transformers>=4.40.0
+faiss-cpu>=1.7.4
+
+# Retrieval
+rank-bm25>=0.2.2
+
+# Evaluation
+rouge-score>=0.1.2
+bert-score>=0.3.13
+
+# UI
+streamlit>=1.35.0
+pandas>=2.0.0
