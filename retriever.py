@@ -1,9 +1,9 @@
 """
-Mediterranean Cuisine -- RAG Retrieval & Ranking Pipeline
-=========================================================
-Deliverable 3: Retrieval and Ranking
+Mediterranean Cuisine RAG Retrieval & Ranking Pipeline
 
-Three retrieval strategies:
+Retrieval and Ranking
+
+3 retrieval strategies:
   A) Pure vector retrieval  (cosine similarity via FAISS)
   B) Pure BM25 keyword retrieval
   C) Hybrid retrieval with Reciprocal Rank Fusion (RRF)
@@ -21,9 +21,9 @@ import json
 import argparse
 import numpy as np
 
-# ---------------------------------------------------------------
-# CONFIGURATION
-# ---------------------------------------------------------------
+
+# CONFIG
+
 MODELS = {
     "minilm": "all-MiniLM-L6-v2",
     "mpnet":  "all-mpnet-base-v2",
@@ -32,7 +32,7 @@ MODELS = {
 }
 
 BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
-# BGE-M3 needs no query prefix via SentenceTransformers
+# BGE-M3 (no query prefix via SentenceTransformers)
 BGEM3_QUERY_PREFIX = ""
 
 CHUNK_FILES = {
@@ -63,23 +63,19 @@ EXPERIMENT_MATRIX = [
 ]
 
 
-# ---------------------------------------------------------------
-# STEP 1: LOAD CHUNKS
-# ---------------------------------------------------------------
+#1: LOAD CHUNKS
 
 def load_chunks(chunk_file: str) -> list[dict]:
-    """Load chunks from JSON file."""
+    """Loading chunks from JSON file."""
     with open(chunk_file, encoding="utf-8") as f:
         chunks = json.load(f)
     return chunks
 
 
-# ---------------------------------------------------------------
-# STEP 2: SETUP -- load indices and models
-# ---------------------------------------------------------------
+# 2: SETUP -- load indices and models
 
 def setup_vector(model_key: str, strategy: str):
-    """Load FAISS index, ID mapping, and embedding model for vector retrieval."""
+    """Loading FAISS index, ID mapping, and embedding model for vector retrieval."""
     import faiss
     from sentence_transformers import SentenceTransformer
 
@@ -109,7 +105,7 @@ def setup_vector(model_key: str, strategy: str):
 
 
 def setup_bm25(strategy: str):
-    """Build a BM25 index from chunks."""
+    """Building a BM25 index from chunks."""
     from rank_bm25 import BM25Okapi
 
     chunk_file = CHUNK_FILES[strategy]
@@ -128,9 +124,7 @@ def setup_bm25(strategy: str):
     }
 
 
-# ---------------------------------------------------------------
-# STEP 3: RETRIEVAL FUNCTIONS
-# ---------------------------------------------------------------
+# 3: RETRIEVAL FUNCTIONS
 
 def retrieve_vector(query: str, vec_setup: dict, k: int = 5) -> list[dict]:
     """Embed query and search FAISS index. Returns top-k results."""
@@ -139,7 +133,7 @@ def retrieve_vector(query: str, vec_setup: dict, k: int = 5) -> list[dict]:
     id_mapping = vec_setup["id_mapping"]
     model_key = vec_setup["model_key"]
 
-    # BGE models need query prefix
+    # BGE models (query prefix)
     encode_query = query
     if model_key == "bge":
         encode_query = BGE_QUERY_PREFIX + query
@@ -160,14 +154,14 @@ def retrieve_vector(query: str, vec_setup: dict, k: int = 5) -> list[dict]:
 
 
 def retrieve_bm25(query: str, bm25_setup: dict, k: int = 5) -> list[dict]:
-    """Score query with BM25 and return top-k results."""
+    """Scoring query with BM25 and return top-k results."""
     bm25 = bm25_setup["bm25"]
     id_mapping = bm25_setup["id_mapping"]
 
     tokenized_query = query.lower().split()
     scores = bm25.get_scores(tokenized_query)
 
-    # Get top-k indices
+    # top-k indices
     top_indices = np.argsort(scores)[::-1][:k]
 
     results = []
@@ -182,11 +176,11 @@ def retrieve_bm25(query: str, bm25_setup: dict, k: int = 5) -> list[dict]:
 
 def retrieve_hybrid(query: str, vec_setup: dict, bm25_setup: dict,
                     k: int = 5, rrf_k: int = 60, fetch_k: int = 20) -> list[dict]:
-    """Run vector + BM25, fuse with Reciprocal Rank Fusion, return top-k."""
+    """vector + BM25, with Reciprocal Rank Fusion, return top-k."""
     vec_results = retrieve_vector(query, vec_setup, k=fetch_k)
     bm25_results = retrieve_bm25(query, bm25_setup, k=fetch_k)
 
-    # Compute RRF scores
+    # RRF scores
     rrf_scores = {}
 
     for r in vec_results:
@@ -197,7 +191,6 @@ def retrieve_hybrid(query: str, vec_setup: dict, bm25_setup: dict,
         cid = r["chunk_id"]
         rrf_scores[cid] = rrf_scores.get(cid, 0) + 1.0 / (rrf_k + r["rank"])
 
-    # Sort by RRF score descending
     sorted_chunks = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
 
     results = []
@@ -210,19 +203,16 @@ def retrieve_hybrid(query: str, vec_setup: dict, bm25_setup: dict,
     return results
 
 
-# ---------------------------------------------------------------
-# STEP 4: RUN RETRIEVAL ON BENCHMARK QUERIES
-# ---------------------------------------------------------------
+# 4: RUN RETRIEVAL ON BENCHMARK QUERIES
 
 def run_benchmark(method: str, model_key: str, strategy: str,
                   k: int = 5) -> list[dict]:
     """Run all 15 benchmark queries with the specified retrieval config."""
-    # Load benchmark queries
+    # Loading benchmark queries
     with open(BENCHMARK_QUERIES_FILE, encoding="utf-8") as f:
         benchmark = json.load(f)
     queries = benchmark["queries"]
 
-    # Setup indices
     vec_setup = None
     bm25_setup = None
 
@@ -231,7 +221,7 @@ def run_benchmark(method: str, model_key: str, strategy: str,
     if method in ("bm25", "hybrid"):
         bm25_setup = setup_bm25(strategy)
 
-    # Retrieve for each query
+    # Retrieving results for each query
     all_results = []
     print(f"\n  Running {len(queries)} benchmark queries...")
 
@@ -262,7 +252,7 @@ def run_benchmark(method: str, model_key: str, strategy: str,
 
 
 def print_results(all_results: list[dict], chunks_lookup: dict):
-    """Print retrieval results with chunk previews."""
+    """retrieval results with chunk previews."""
     for r in all_results:
         print(f"\n  Q{r['query_id']}: {r['query']}")
         for hit in r["retrieved"]:
@@ -276,7 +266,7 @@ def print_results(all_results: list[dict], chunks_lookup: dict):
 
 def save_results(all_results: list[dict], method: str, model_key: str,
                  strategy: str):
-    """Save retrieval results to JSON for later evaluation."""
+    """retrieval results to JSON for later eval"""
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     model_tag = model_key if model_key else "none"
@@ -289,13 +279,9 @@ def save_results(all_results: list[dict], method: str, model_key: str,
 
     return filepath
 
-
-# ---------------------------------------------------------------
-# STEP 5: RUN ONE EXPERIMENT
-# ---------------------------------------------------------------
+# 5: 1 EXPERIMENT
 
 def run_one(method: str, model_key: str, strategy: str, k: int = 5):
-    """Run one retrieval experiment and save results."""
     model_label = MODELS.get(model_key, "none") if model_key else "none"
     print(f"\n{'='*60}")
     print(f"  {method.upper()} | {model_label} | {strategy}")
@@ -303,7 +289,7 @@ def run_one(method: str, model_key: str, strategy: str, k: int = 5):
 
     results = run_benchmark(method, model_key, strategy, k=k)
 
-    # Load chunks for display
+    # Loading chunks for display
     chunk_file = CHUNK_FILES[strategy]
     chunks = load_chunks(chunk_file)
     chunks_lookup = {c["chunk_id"]: c for c in chunks}
@@ -313,17 +299,13 @@ def run_one(method: str, model_key: str, strategy: str, k: int = 5):
 
     return results
 
-
-# ---------------------------------------------------------------
-# STEP 6: INTERACTIVE MODE
-# ---------------------------------------------------------------
+# 6: INTERACTIVE MODE
 
 def interactive_mode(method: str, model_key: str, strategy: str, k: int = 5):
-    """Interactive query loop for testing retrieval."""
+    """Interactively query loop for testing retrieval."""
     print(f"\n  Interactive mode: {method} | {MODELS.get(model_key, 'none')} | {strategy}")
     print(f"  Type 'quit' to exit.\n")
 
-    # Setup
     vec_setup = None
     bm25_setup = None
 
@@ -332,7 +314,7 @@ def interactive_mode(method: str, model_key: str, strategy: str, k: int = 5):
     if method in ("bm25", "hybrid"):
         bm25_setup = setup_bm25(strategy)
 
-    # Load chunks for display
+    # Loading chunks for display
     chunk_file = CHUNK_FILES[strategy]
     chunks = load_chunks(chunk_file)
     chunks_lookup = {c["chunk_id"]: c for c in chunks}
@@ -363,9 +345,7 @@ def interactive_mode(method: str, model_key: str, strategy: str, k: int = 5):
             print(f"       {preview}...")
 
 
-# ---------------------------------------------------------------
-# MAIN
-# ---------------------------------------------------------------
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(

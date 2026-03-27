@@ -1,39 +1,25 @@
 """
-Mediterranean Cuisine — RAG Background Corpus Builder
-======================================================
-Deliverable 1: Background Corpus
+Mediterranean Cuisine RAG Background Corpus Builder
+Background Corpus
 
 Ethically compliant scraper:
-  - Checks robots.txt before scraping each domain (fetched with our
-    custom User-Agent so the server returns the real robots.txt file)
-  - Identifies itself honestly via User-Agent (Wikimedia-recommended format)
-  - Respects rate limits (configurable delay between requests)
-  - Retries with back-off on HTTP 429 Too Many Requests
-  - Only scrapes the three permitted public sources
-  - Attributes every document with source URL and title
-  - No login walls, paywalls, or copyrighted commercial content
-  - Skips already-scraped files so the run is resumable
+  1. Checks robots.txt before scraping each domain 
+  2. Respects rate limits (configurable delay between requests)
+  3. Retries with back-off on HTTP 429 Too Many Requests
+  4. Only scrapes the three permitted public sources
+  5. Attributes every document with source URL and title
+  6. No login walls, paywalls, or copyrighted commercial content
+  7. Skipping already-scraped files so the run is resumable
 
-Allowed sources (per coursework specification):
+sources:
   1. Wikipedia  — https://en.wikipedia.org/wiki/List_of_cuisines
   2. Wikibooks  — https://en.wikibooks.org/wiki/Cookbook:Cuisines
   3. Blog       — https://aroundtheworldin80cuisinesblog.wordpress.com/
 
-robots.txt note:
-  Wikipedia's User-agent:* section allows /wiki/ pages and explicitly
-  disallows /w/ (API) and /api/.  We therefore scrape /wiki/ HTML only.
-  The robots.txt is fetched via requests (with our custom UA) so that
-  the server returns the real directives instead of an error splash page.
-
-  
-Usage:
-    pip install requests beautifulsoup4 lxml
-    python build_corpus.py
-
 Outputs:
-    corpus/              ← one .txt file per scraped page
-    corpus_combined.txt  ← single merged file ready for chunking
-    corpus_manifest.csv  ← metadata table (title, url, source, words, status)
+    corpus/              # one .txt file per scraped page
+    corpus_combined.txt  # single merged file ready for chunking
+    corpus_manifest.csv  # metadata table (title, url, source, words, status)
 """
 
 import os
@@ -45,15 +31,12 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-# ──────────────────────────────────────────────────────────────
-# CONFIGURATION
-# ──────────────────────────────────────────────────────────────
+# CONFIG
 OUTPUT_DIR      = "corpus"
 COMBINED_FILE   = "corpus_combined.txt"
 MANIFEST_FILE   = "corpus_manifest.csv"
-DELAY_SECONDS   = 2.0          # polite crawl delay between requests
+DELAY_SECONDS   = 2.0          
 
-# Wikimedia-recommended User-Agent format: AppName/version (contact info)
 HEADERS = {
     "User-Agent": (
         "RAGCorpusBuilder/1.0 "
@@ -62,19 +45,9 @@ HEADERS = {
     )
 }
 
-# ──────────────────────────────────────────────────────────────
-# ROBOTS.TXT COMPLIANCE
-# ──────────────────────────────────────────────────────────────
 _robots_cache: dict[str, urllib.robotparser.RobotFileParser] = {}
 
 def can_fetch(url: str) -> bool:
-    """Return True if robots.txt permits fetching this URL.
-
-    IMPORTANT: We fetch robots.txt via `requests` with our custom User-Agent.
-    Without this, Python's urllib sends 'Python-urllib/x.y', which causes
-    Wikipedia (and Wikimedia sites) to return an error splash page instead of
-    the real robots.txt, making RobotFileParser block all URLs incorrectly.
-    """
     from urllib.parse import urlparse
     parsed   = urlparse(url)
     base_url = f"{parsed.scheme}://{parsed.netloc}"
@@ -96,9 +69,6 @@ def can_fetch(url: str) -> bool:
     return rp.can_fetch(HEADERS["User-Agent"], url)
 
 
-# ──────────────────────────────────────────────────────────────
-# TARGET PAGES
-# ──────────────────────────────────────────────────────────────
 WIKIPEDIA_PAGES = [
     # Overview
     ("Mediterranean cuisine", "https://en.wikipedia.org/wiki/Mediterranean_cuisine"),
@@ -366,16 +336,8 @@ BLOG_PAGES = [
     ("Category: Northern Italy",             "https://aroundtheworldin80cuisinesblog.wordpress.com/category/69-northern-italy/"),
 ]
 
-# ──────────────────────────────────────────────────────────────
-# FETCH HELPERS
-# ──────────────────────────────────────────────────────────────
 
 def fetch_soup(url: str, max_retries: int = 3) -> BeautifulSoup | None:
-    """Fetch URL (after robots.txt check) and return parsed HTML.
-
-    Retries up to `max_retries` times on HTTP 429 (rate-limit), honouring
-    the Retry-After header when present.
-    """
     if not can_fetch(url):
         print(f"  [ROBOTS] Disallowed by robots.txt: {url}")
         return None
@@ -400,15 +362,12 @@ def fetch_soup(url: str, max_retries: int = 3) -> BeautifulSoup | None:
 
 
 def clean(text: str) -> str:
-    text = re.sub(r"\[\d+\]", "", text)          # remove citation markers [1]
+    text = re.sub(r"\[\d+\]", "", text)          
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
 
-# ──────────────────────────────────────────────────────────────
-# SOURCE-SPECIFIC SCRAPERS
-# ──────────────────────────────────────────────────────────────
 
 def scrape_wikipedia(url: str) -> str:
     soup = fetch_soup(url)
@@ -442,37 +401,25 @@ def scrape_wikibooks(url: str) -> str:
 
 
 def scrape_blog(url: str) -> str:
-    """Scrape a WordPress blog category page.
-
-    Strategy:
-    1. Grab any full post bodies visible on the category page.
-    2. If the category page only shows excerpts (or is empty), follow every
-       post permalink found in the listing and scrape each individual post.
-    3. Fall back to all <p> tags if nothing else is found.
-    """
     soup = fetch_soup(url)
     if not soup:
         return ""
 
-    # -- Step 1: extract full post bodies present on the category page -------
     texts = []
     for article in soup.find_all("article"):
         body = article.get_text(separator="\n").strip()
         if len(body) > 200:
             texts.append(body)
 
-    # -- Step 2: if few/no bodies, follow individual post links --------------
     if len(texts) < 2:
         post_links = set()
-        # WordPress post permalinks inside the listing area
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            # Only follow links within the same domain that look like posts
             if (href.startswith("https://aroundtheworldin80cuisinesblog.wordpress.com/")
                     and "/category/" not in href
                     and len(href) > len("https://aroundtheworldin80cuisinesblog.wordpress.com/") + 5):
                 post_links.add(href.rstrip("/"))
-        for post_url in list(post_links)[:12]:  # cap at 12 posts per category
+        for post_url in list(post_links)[:12]: 
             time.sleep(DELAY_SECONDS)
             post_soup = fetch_soup(post_url)
             if not post_soup:
@@ -485,16 +432,11 @@ def scrape_blog(url: str) -> str:
                 if len(body) > 200:
                     texts.append(body)
 
-    # -- Step 3: paragraph fallback ------------------------------------------
     if not texts:
         texts = [p.get_text() for p in soup.find_all("p") if p.get_text(strip=True)]
 
     return clean("\n\n".join(texts))
 
-
-# ──────────────────────────────────────────────────────────────
-# PIPELINE
-# ──────────────────────────────────────────────────────────────
 
 def slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9_]", "_", s.lower())[:60]
@@ -565,7 +507,6 @@ def build_corpus():
         print(f"           -> {wc:,} words  ->  {filename}")
         time.sleep(DELAY_SECONDS)
 
-    # ── Combined file ──────────────────────────────────────────
     with open(COMBINED_FILE, "w", encoding="utf-8") as f:
         f.write("MEDITERRANEAN CUISINE — RAG BACKGROUND CORPUS\n")
         f.write(f"Generated: {datetime.utcnow().strftime('%Y-%m-%d')}\n")
@@ -574,7 +515,6 @@ def build_corpus():
         f.write("=" * 60 + "\n")
         f.write("".join(combined))
 
-    # ── Manifest CSV ───────────────────────────────────────────
     with open(MANIFEST_FILE, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(
             f, fieldnames=["title", "url", "source", "word_count", "status"]
@@ -582,7 +522,6 @@ def build_corpus():
         w.writeheader()
         w.writerows(manifest)
 
-    # ── Summary ────────────────────────────────────────────────
     ok    = [r for r in manifest if r["status"] == "ok"]
     total = sum(r["word_count"] for r in ok)
     print(f"\n{'-'*50}")
